@@ -1,17 +1,11 @@
 #include "app_string.h"
 
-String string_create(u8 * string, size_t length)
-{
-	String new_string = {
-		.start = string,
-		.length = length
-	};
-	
-	return new_string;
-}
+const String STRING_NULL = { .start = NULL, .length = 0 };
 
-bool string_is_null(String string)
-{
-	return string.start == NULL && string.length == 0;
-}
+extern inline u8 string_char_at(String * string, s64 index);
 
+extern inline bool string_is_null(String string);
+
+extern inline String string_create(u8 * string, s64 length);
+
+extern inline String string_create_from_static(const char * string);

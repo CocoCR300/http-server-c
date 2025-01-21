@@ -1,9 +1,39 @@
 #include "buffer.h"
 
-#include <stdlib.h>
 #include <string.h>
 
-u8 buffer_resize(Buffer * buffer, size_t capacity)
+void buffer_allocate(Buffer * buffer, s64 capacity)
+{
+	buffer->capacity = 0;
+	buffer->used = 0;
+
+	buffer->start = malloc(capacity);
+	if (buffer->start != NULL) {
+		buffer->capacity = capacity;
+	}
+}
+
+u8 buffer_read_entire_file(Buffer * buffer, FILE * file, s64 to_read)
+{
+	s64 buffer_left = buffer->capacity - buffer->used;
+	if (buffer_left < to_read) {
+		s64 new_capacity = buffer->capacity + (to_read - buffer_left);
+		u8 result = buffer_resize(buffer, new_capacity);
+		if (result != 0) {
+			return 1;
+		}
+	}
+
+	s64 read = fread(buffer->start, SIZE_U8, to_read, file);
+	buffer->used += read;
+	if (read < to_read) {
+		return 1;
+	}
+
+	return 0;
+}
+
+u8 buffer_resize(Buffer * buffer, s64 capacity)
 {
 	u8 * new_start = realloc(buffer->start, capacity);
 	if (new_start == NULL) {
@@ -15,10 +45,10 @@ u8 buffer_resize(Buffer * buffer, size_t capacity)
 	return 0;
 }
 
-size_t buffer_write(Buffer * destination, const u8 * data, size_t length)
+s64 buffer_write(Buffer * destination, const u8 * data, s64 length)
 {
-	size_t * buffer_used = &destination->used;
-	size_t buffer_left = destination->capacity - *buffer_used;
+	s64 * buffer_used = &destination->used;
+	s64 buffer_left = destination->capacity - *buffer_used;
 
 	size_t write = buffer_left < length ? buffer_left : length;
 	if (buffer_left < length) {
@@ -33,4 +63,8 @@ size_t buffer_write(Buffer * destination, const u8 * data, size_t length)
 
 	return length - write;
 }
+
+extern inline void buffer_clear(Buffer * buffer);
+extern inline void buffer_free(Buffer * buffer);
+extern inline bool buffer_full(Buffer * buffer);
 

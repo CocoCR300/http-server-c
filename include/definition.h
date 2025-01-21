@@ -1,5 +1,6 @@
 #pragma once 
 
+#include <limits.h>
 #include <stdint.h>
 #include <sys/socket.h>
 
@@ -12,8 +13,11 @@ typedef uint64_t u64;
 
 typedef int8_t s8;
 typedef int32_t s32;
+typedef int64_t s64;
 
 typedef struct sockaddr sockaddr;
 typedef struct sockaddr_in sockaddr_in;
 
-static const size_t SIZE_U8 = sizeof(u8);
+extern const s64 SIZE_U8;
+
+extern const s64 S64_MAX;

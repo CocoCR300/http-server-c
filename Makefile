@@ -48,10 +48,10 @@ cmake_force:
 SHELL = /bin/sh
 
 # The CMake executable.
-CMAKE_COMMAND = /usr/bin/cmake
+CMAKE_COMMAND = /opt/clion-2024.3.1.1/bin/cmake/linux/x64/bin/cmake
 
 # The command to remove a file.
-RM = /usr/bin/cmake -E rm -f
+RM = /opt/clion-2024.3.1.1/bin/cmake/linux/x64/bin/cmake -E rm -f
 
 # Escaping for special characters.
 EQUALS = =
@@ -67,8 +67,8 @@ CMAKE_BINARY_DIR = /home/coco/projects/http-server-c
 
 # Special rule for the target edit_cache
 edit_cache:
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Running CMake cache editor..."
-	/usr/bin/ccmake -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR)
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "No interactive CMake dialog available..."
+	/opt/clion-2024.3.1.1/bin/cmake/linux/x64/bin/cmake -E echo No\ interactive\ CMake\ dialog\ available.
 .PHONY : edit_cache
 
 # Special rule for the target edit_cache
@@ -78,7 +78,7 @@ edit_cache/fast: edit_cache
 # Special rule for the target rebuild_cache
 rebuild_cache:
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Running CMake to regenerate build system..."
-	/usr/bin/cmake --regenerate-during-build -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR)
+	/opt/clion-2024.3.1.1/bin/cmake/linux/x64/bin/cmake --regenerate-during-build -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR)
 .PHONY : rebuild_cache
 
 # Special rule for the target rebuild_cache
@@ -178,6 +178,30 @@ src/buffer.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/http_server_c.dir/build.make CMakeFiles/http_server_c.dir/src/buffer.c.s
 .PHONY : src/buffer.c.s
 
+src/definition.o: src/definition.c.o
+.PHONY : src/definition.o
+
+# target to build an object file
+src/definition.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/http_server_c.dir/build.make CMakeFiles/http_server_c.dir/src/definition.c.o
+.PHONY : src/definition.c.o
+
+src/definition.i: src/definition.c.i
+.PHONY : src/definition.i
+
+# target to preprocess a source file
+src/definition.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/http_server_c.dir/build.make CMakeFiles/http_server_c.dir/src/definition.c.i
+.PHONY : src/definition.c.i
+
+src/definition.s: src/definition.c.s
+.PHONY : src/definition.s
+
+# target to generate assembly for a file
+src/definition.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/http_server_c.dir/build.make CMakeFiles/http_server_c.dir/src/definition.c.s
+.PHONY : src/definition.c.s
+
 src/main.o: src/main.c.o
 .PHONY : src/main.o
 
@@ -217,6 +241,9 @@ help:
 	@echo "... src/buffer.o"
 	@echo "... src/buffer.i"
 	@echo "... src/buffer.s"
+	@echo "... src/definition.o"
+	@echo "... src/definition.i"
+	@echo "... src/definition.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"

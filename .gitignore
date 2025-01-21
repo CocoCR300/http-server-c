@@ -10,8 +10,9 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
+.cmake/
+cmake-build-debug/
 
 .idea/
 bin/
-cmake-build-debug/
 **/*.dSYM/
