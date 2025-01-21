@@ -13,7 +13,7 @@ typedef struct
 } Buffer;
 
 void buffer_allocate(Buffer * buffer, s64 capacity);
-u8 buffer_read_entire_file(Buffer * buffer, FILE * file, s64 to_read);
+u8 buffer_read_file(Buffer * buffer, FILE * file, s64 to_read);
 u8 buffer_resize(Buffer * buffer, s64 capacity);
 s64 buffer_write(Buffer * destination, const u8 * data, s64 length);
 

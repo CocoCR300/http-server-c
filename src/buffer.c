@@ -1,6 +1,7 @@
 #include "buffer.h"
 
 #include <string.h>
+#include "error_number.h"
 
 void buffer_allocate(Buffer * buffer, s64 capacity)
 {
@@ -13,7 +14,7 @@ void buffer_allocate(Buffer * buffer, s64 capacity)
 	}
 }
 
-u8 buffer_read_entire_file(Buffer * buffer, FILE * file, s64 to_read)
+u8 buffer_read_file(Buffer * buffer, FILE * file, s64 to_read)
 {
 	s64 buffer_left = buffer->capacity - buffer->used;
 	if (buffer_left < to_read) {
@@ -27,7 +28,7 @@ u8 buffer_read_entire_file(Buffer * buffer, FILE * file, s64 to_read)
 	s64 read = fread(buffer->start, SIZE_U8, to_read, file);
 	buffer->used += read;
 	if (read < to_read) {
-		return 1;
+		return FILE_READ_ERROR;
 	}
 
 	return 0;

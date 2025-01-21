@@ -18,8 +18,9 @@
 #include <netinet/tcp.h>
 #include <unistd.h>
 
-#include "definition.h"
 #include "buffer.h"
+#include "definition.h"
+#include "error_number.h"
 #include "app_string.h"
 
 typedef struct
@@ -68,15 +69,29 @@ static inline s64 min(s64 value0, s64 value1)
 	return value1;
 }
 
-s64 path_find_extension_index(const u8 * path, s64 length)
+s64 path_find_extension_index(String * path)
 {
-	for (s64 i = length; i >= 0; --i) {
-		if (path[i] == '.') {
+	u8 * string = path->start;
+
+	for (s64 i = path->length; i >= 0; --i) {
+		if (string[i] == '.') {
 			return i + 1;
 		}
 	}
 
 	return -1;
+}
+
+String path_find_extension(String * path)
+{
+	String extension = STRING_NULL;
+	s64 index = path_find_extension_index(path);
+	if (index >= 0) {
+		extension.start = path->start + index;
+		extension.length = path->length - index;
+	}
+
+	return extension;
 }
 
 void print_error(const char * message)
@@ -294,6 +309,65 @@ s8 set_header_string_value(RequestData * data, const u8 * header_name, s64 heade
 	return 0;
 }
 
+u8 read_requested_resource(const char * path, Buffer * output_buffer)
+{
+	struct stat file_info;
+	FILE * requested_resource_file = fopen(path, "r");
+
+	if (requested_resource_file == NULL) {
+		if (errno == ENOMEM) {
+			return MEMORY_INSUFFICIENT;
+		}
+		if (errno == ENOENT) {
+			return FILE_NOT_FOUND;
+		}
+		if (errno == EACCES){
+			return FILE_NO_PERMISSION;
+		}
+
+		return FILE_UNKNOWN_ERROR;
+	}
+
+	if (stat(path, &file_info) != 0) {
+		if (errno == ENOMEM) {
+			return MEMORY_INSUFFICIENT;
+		}
+
+		return FILE_UNKNOWN_ERROR;
+	}
+
+	buffer_allocate(output_buffer, file_info.st_size);
+	if (buffer_full(output_buffer)) {
+		return MEMORY_INSUFFICIENT;
+	}
+
+	s64 buffer_size = output_buffer->capacity;
+	u8 result = buffer_read_file(output_buffer, requested_resource_file, buffer_size);
+	fclose(requested_resource_file);
+
+	return result;
+}
+
+// No need to free the given memory, at least that's what I can understand from the libmagic's
+// documentation, since nothing is mentioned about it.
+const char * determine_resource_mime_type(String * path, const Buffer * resource_buffer)
+{
+	const char * resource_mime_type = magic_buffer(magic_obj, resource_buffer->start, resource_buffer->used);
+
+	if (resource_mime_type == NULL || strcmp(resource_mime_type, "text/plain") == 0) {
+		String extension = path_find_extension(path);
+
+		if (string_equals_c_str(&extension, "css")) {
+			resource_mime_type = "text/css";
+		}
+		else {
+			resource_mime_type = "text/plain";
+		}
+	}
+
+	return resource_mime_type;
+}
+
 void process_request(Context * context, RequestData * request_data)
 {
 	s32 client_socket_fd = request_data->client_socket_fd;
@@ -414,57 +488,48 @@ void process_request(Context * context, RequestData * request_data)
 		}
 
 		printf("Considering argument a path.\n");
-		const char * path = NULL;
+		String path;
+		char * path_c_str = NULL;
 		if (string_equals_c_str(argument, "/")) {
 			printf("Client is requesting root resource.\n");
-			path = "index.html";
+			path_c_str = "index.html";
+			path = string_create_from_static(path_c_str);
 		}
 		else {
 			// Ignore first character: "/"
-			memcpy(input, argument->start + 1, argument->length - 1);
-			input[argument->length - 1] = 0;
-			path = input;
+			path = string_ignore_leading_chars(argument, 1);
+			path_c_str = input;
+
+			string_to_c_string(&path, path_c_str);
 		}
 
-		printf("Requested resource: %s\n", path);
+		printf("Requested resource: %s\n", path_c_str);
 
-		u16 status_code = 200;
-		const char * resource_mime_type = NULL;
-		struct stat file_info;
+		u16 status_code;
 		Buffer requested_resource;
-		if (stat(path, &file_info) != 0) {
+		u8 result = read_requested_resource(path_c_str, &requested_resource);
+		if (result == 0) {
+			status_code = 200;
+		}
+		else if (result == FILE_NOT_FOUND) {
+			status_code = 404;
 			print_error("Couldn't open requested resource.\n");
-			perror("stat");
-
-			if (errno == ENOENT) {
-				status_code = 404;
-			}
-			else {
-				status_code = 500;
-			}
+		}
+		else if (result == FILE_READ_ERROR) {
+			status_code = 500;
+			print_error("An error occured while reading the resource.\n");
+		}
+		else if (result == FILE_NO_PERMISSION) {
+			status_code = 500;
+			print_error("Insufficient permissions to access requested resource.\n");
+		}
+		else if (result == MEMORY_INSUFFICIENT) {
+			status_code = 500;
+			print_error("Couldn't allocate enough memory to store the requested resource.\n");
 		}
 		else {
-			buffer_allocate(&requested_resource, file_info.st_size);
-			if (buffer_full(&requested_resource)) {
-				print_error("Couldn't allocate enough memory to store the requested resource.\n");
-			}
-			else {
-				s64 buffer_size = requested_resource.capacity;
-				FILE * requested_resource_file = fopen(path, "r");
-				if (requested_resource_file == NULL) {
-					print_error("Couldn't open requested file.\n");
-					perror("open");
-				}
-				else {
-					u8 result = buffer_read_entire_file(&requested_resource, requested_resource_file, buffer_size);
-					if (result != 0) {
-						printf("An error occured while reading the resource.\n");
-						perror("read");
-					}
-
-					fclose(requested_resource_file);
-				}
-			}
+			status_code = 500;
+			print_error("An unknown error occurred while reading the requested resource.\n");
 		}
 
 		printf("Sending response message to client.\n");
@@ -476,22 +541,11 @@ void process_request(Context * context, RequestData * request_data)
 		s64 output_length = snprintf(output, sizeof(output) - sizeof(response_status_data), response_status_data, status_code, status_code_title.length, status_code_title.start);
 
 		s64 resource_length = requested_resource.used;
-		if (resource_length > 0) {
+		if (status_code == 200 && resource_length > 0) {
 			const char content_length_template[] = "Content-Length: %ld\n";
 			output_length += snprintf(output + output_length, sizeof(output) - output_length - sizeof(content_length_template), content_length_template, resource_length);
 
-			resource_mime_type = magic_buffer(magic_obj, requested_resource.start, resource_length);
-
-			if (resource_mime_type == NULL || strcmp(resource_mime_type, "text/plain") == 0) {
-				s64 index = path_find_extension_index(path, strlen(path));
-				if (strcmp(path + index, "css") == 0) {
-					resource_mime_type = "text/css";
-				}
-				else {
-					resource_mime_type = "text/plain";
-				}
-			}
-
+			const char * resource_mime_type = determine_resource_mime_type(&path, &requested_resource);
 			const char content_type_template[] = "Content-Type: %s\n";
 			output_length += snprintf(output + output_length, sizeof(output) - output_length - strlen(resource_mime_type), content_type_template, resource_mime_type);
 		}
@@ -511,7 +565,6 @@ void process_request(Context * context, RequestData * request_data)
 		write(client_socket_fd, requested_resource.start, resource_length);
 
 		buffer_free(&requested_resource);
-		resource_mime_type = NULL;
 
 		memset(input, 0, input_length);
 		memset(output, 0, output_length);

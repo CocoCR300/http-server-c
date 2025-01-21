@@ -202,6 +202,30 @@ src/definition.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/http_server_c.dir/build.make CMakeFiles/http_server_c.dir/src/definition.c.s
 .PHONY : src/definition.c.s
 
+src/error_number.o: src/error_number.c.o
+.PHONY : src/error_number.o
+
+# target to build an object file
+src/error_number.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/http_server_c.dir/build.make CMakeFiles/http_server_c.dir/src/error_number.c.o
+.PHONY : src/error_number.c.o
+
+src/error_number.i: src/error_number.c.i
+.PHONY : src/error_number.i
+
+# target to preprocess a source file
+src/error_number.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/http_server_c.dir/build.make CMakeFiles/http_server_c.dir/src/error_number.c.i
+.PHONY : src/error_number.c.i
+
+src/error_number.s: src/error_number.c.s
+.PHONY : src/error_number.s
+
+# target to generate assembly for a file
+src/error_number.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/http_server_c.dir/build.make CMakeFiles/http_server_c.dir/src/error_number.c.s
+.PHONY : src/error_number.c.s
+
 src/main.o: src/main.c.o
 .PHONY : src/main.o
 
@@ -244,6 +268,9 @@ help:
 	@echo "... src/definition.o"
 	@echo "... src/definition.i"
 	@echo "... src/definition.s"
+	@echo "... src/error_number.o"
+	@echo "... src/error_number.i"
+	@echo "... src/error_number.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"

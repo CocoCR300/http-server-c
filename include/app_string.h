@@ -30,12 +30,7 @@ inline bool string_is_null(String string)
 
 inline String string_create(u8 * string, s64 length)
 {
-	String new_string = {
-		.start = string,
-		.length = length
-	};
-	
-	return new_string;
+	return (String) { .start = string, .length = length };
 }
 
 inline String string_create_from_static(const char * c_string)
@@ -43,11 +38,23 @@ inline String string_create_from_static(const char * c_string)
 	s64 length = strlen(c_string);
 	assert(length <= S64_MAX);
 
-	String new_string = {
-		.start = c_string,
-		.length = length
-	};
+	return (String) { .start = c_string, .length = length };
+}
 
-	return new_string;
+inline String string_ignore_leading_chars(const String * string, s64 count)
+{
+	return (String) { .start = string->start + count, .length = string->length - count };
+}
+
+inline void string_to_c_string(const String * string, char * c_string)
+{
+	assert(!string_is_null(*string));
+
+	const u8 * string_ptr = string->start;
+	for (s64 i = 0; i < string->length; ++i) {
+		c_string[i] = string_ptr[i];
+	}
+
+	c_string[string->length] = 0;
 }
 
