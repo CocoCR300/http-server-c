@@ -49,11 +49,11 @@ const char * standard_method_names[] = { "CONNECT", "DELETE", "GET", "HEAD", "OP
 const char * standard_header_names[] = { "Accept", "Accept-Encoding", "Accept-Language", "Age", "Connection", "Content-Length", "DNT", "Host", "Priority", "Referer", "Sec-Fetch-Dest", "Sec-Fetch-Mode", "Sec-Fetch-Site", "Upgrade-Insecure-Requests", "User-Agent" };
 const s8 standard_headers_count = ARRAY_COUNT(standard_header_names);
 
-s32		socket_file_descriptor;
 magic_t	magic_obj;
 
-void	print_error(const char * message);
+void	print_error(const char * format, ...);
 void	print_lines(const u8 * string, s64 length, const char * line_header);
+s64 c_string_find_index_in_line(const char * string, char to_find);
 s64 string_find_index(const u8 * string, u8 to_find, s64 length);
 s64	string_find_index_in_line(const u8 * string, s64 length, u8 to_find);
 s64	string_find_line_end(const u8 * string, s64 length);
@@ -94,9 +94,169 @@ String path_find_extension(String * path)
 	return extension;
 }
 
-void print_error(const char * message)
+void print_formatted(FILE * file, const char * format, const char * line_header, va_list args) 
 {
-	fprintf(stderr, "[ERROR] %s", message);
+	u8 _local_line[256] = { 0 };
+	Buffer line = {
+		.start = _local_line,
+		.capacity = sizeof(_local_line),
+		.used = 0
+	};
+
+	while (*format != 0) {
+		s64 format_specifer_index = c_string_find_index_in_line(format, '%');
+		if (format_specifer_index <= 0) {
+			format_specifer_index = -format_specifer_index;
+
+			fprintf(file, "%s", line_header);
+			if (line.used > 0) {
+				fwrite(line.start, SIZE_U8, line.used, file);
+			}
+
+			fwrite(format, SIZE_U8, format_specifer_index, file);
+			fprintf(file, "\n");
+			if (format[format_specifer_index] == '\r') {
+				format += 1;
+			}
+			format += format_specifer_index + 1;
+
+			if (line.start == _local_line) {
+				line.capacity = sizeof(_local_line);
+				line.used = 0;
+			}
+			else {
+				buffer_clear(&line);
+			}
+		}
+		else {
+			u8 argument_backing[24];
+			u8 * argument = NULL;
+			s64 argument_length = -1, format_specifier_length = 0;
+			s64 width = 0;
+			// Ignore % character (+ 1)
+			const char * format_specifier = format + format_specifer_index + 1;
+			if (*format_specifier == '%') {
+				argument = (u8 *) "%";
+				argument_length = 1;
+
+				format_specifier_length = 1;
+			}
+			else if (*format_specifier == 'S') {
+				String string_arg = va_arg(args, String);
+				argument = string_arg.start;
+				argument_length = string_arg.length;
+				format_specifier_length = 1;
+			}
+			else {
+				bool precision_provided = false;
+				char * end = (char *) format_specifier;
+				u64 precision = 0;
+
+				// TODO: Replace with new c_string_to_s64
+				width = strtoul(format_specifier, &end, 10);
+				format_specifier_length = end - format_specifier;
+				format_specifier += format_specifier_length;
+
+				if (*format_specifier == '.') {
+					format_specifier += 1;
+					if (*format_specifier == '*') {
+						precision = va_arg(args, s64);
+						format_specifier_length += 1;
+						format_specifier += 1;
+					}
+					else {
+						end = (char *) format_specifier;
+						precision = strtoul(format_specifier, &end, 10);
+
+						format_specifier_length += end - format_specifier;
+						assert(format_specifier_length > 0);
+						format_specifier += format_specifier_length;
+					}
+
+					// Add starting dot
+					format_specifier_length += 1;
+					precision_provided = true;
+				}
+
+				if (*format_specifier == 's') {
+					assert(precision <= S64_MAX);
+					argument_length = precision;
+					argument = va_arg(args, u8 *);
+
+					if (!precision_provided) {
+						argument_length = strlen((const char *) argument);
+					}
+
+					if (width > 0) {
+                        width -= argument_length;
+					}
+
+					format_specifier_length += 1;
+				}
+				else if (strncmp(format_specifier, "ld", 2) == 0) {
+					assert(precision <= S32_MAX);
+					s64 number = va_arg(args, s64);
+					argument = argument_backing;
+					argument_length = snprintf((char *) argument, sizeof(argument_backing), "%.*ld", (s32) precision, number);
+
+					format_specifier_length += 2;
+				}
+				else if (strncmp(format_specifier, "lu", 2) == 0) {
+					assert(precision <= S32_MAX);
+					u64 number = va_arg(args, u64);
+					argument = argument_backing;
+					argument_length = snprintf((char *) argument, sizeof(argument_backing), "%.*lu", (s32) precision, number);
+
+					format_specifier_length += 2;
+				}
+			}
+
+			assert(argument != NULL);
+
+			s64 old_line_used = line.used;
+			s64 line_left = line.capacity - line.used;
+			s64 missing = format_specifer_index + width + argument_length;
+			if (line_left < missing) {
+				buffer_allocate(&line, line.capacity + missing);
+				buffer_write(&line, _local_line, old_line_used);
+			}
+
+			buffer_write(&line, format, format_specifer_index);
+			buffer_write_count(&line, ' ', width);
+			buffer_write(&line, argument, argument_length);
+
+			// Add starting "%" (+ 1)
+			format += format_specifer_index + format_specifier_length + 1;
+		}
+	}
+
+	if (line.start != _local_line) {
+		buffer_free(&line);
+	}
+}
+
+void print_info(const char * format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	print_formatted(stdout, format, "[INFO] ", args);
+	va_end(args);
+}
+
+void print_error(const char * format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	print_formatted(stderr, format, "[ERROR] ", args);
+	va_end(args);
+}
+
+void print_warning(const char * format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	print_formatted(stderr, format, "[WARNING] ", args);
+	va_end(args);
 }
 
 void print_lines(const u8 * string, s64 length, const char * line_header)
@@ -190,6 +350,24 @@ s64 string_ignore_space(const u8 ** string, s64 length)
 	return ignored;
 }
 
+s64 c_string_find_index_in_line(const char * string, char to_find)
+{
+	s64 index = 0;
+	for (; string[index] != 0; ++index) {
+		u8 character = string[index];
+		if (character == to_find) {
+			return index;
+		}
+
+		if (character == '\r' || character == '\n') {
+			break;
+		}
+	}
+
+	// Return the index of the closest line end character, but negated
+	return -index;
+}
+
 s64 string_find_index_in_line(const u8 * string, s64 length, u8 to_find)
 {
 	s64 index = 0;
@@ -242,27 +420,7 @@ s64 string_multi_find(const u8 * string, u8 * chars, s64 * indices, s64 length, 
 
 void signal_handler(int signal_number)
 {
-	printf("Process interrupted.\n");
-	
-	magic_close(magic_obj);
-
-	if (socket_file_descriptor != -1) {
-		printf("Closing socket.\n");
-		s32 result = shutdown(socket_file_descriptor, SHUT_RDWR);
-		if (result != 0) {
-			print_error("Failed to shutdown socket.\n");
-			perror("shutdown");
-		}
-		result = close(socket_file_descriptor);
-		if (result != 0) {
-			print_error("Failed to close socket.\n");
-			perror("close");
-		}
-
-		socket_file_descriptor = -1;
-	}
-
-	exit(0);
+	print_warning("Process interrupted.\n");
 }
 
 s8 index_by_header_name(const u8 * header_name, s64 length, const char * header_names[], s8 header_count)
@@ -376,7 +534,7 @@ void process_request(Context * context, RequestData * request_data)
 
 	while (true) {
 		s64 input_length = read(client_socket_fd, input, sizeof(input));
-		printf("Read %ld bytes from client.\n", input_length);
+		print_info("Read %ld bytes from client.\n", input_length);
 
 		if (input_length < 0) {
 			print_error("Couldn't read data from client.\n");
@@ -412,13 +570,10 @@ void process_request(Context * context, RequestData * request_data)
 		}
 		*version = string_create(argument->start + argument->length + 1, index);
 
-		printf("Verb: ");
-		fwrite(method->start, SIZE_U8, method->length, stdout);
-		printf("\nArgument: ");
-		fwrite(argument->start, SIZE_U8, argument->length, stdout);
-		printf("\nVersion: ");
-		fwrite(version->start, SIZE_U8, version->length, stdout);
-		printf("\n");
+		print_info( "Verb: %S\n"
+					"Argument: %S\n"
+					"Version: %S\n",
+					*method, *argument, *version);
 		
 		const u8	* input_string = input,
 					* end = input + input_length;
@@ -457,20 +612,20 @@ void process_request(Context * context, RequestData * request_data)
 				break;
 			}
 
-			printf("CLIENT > %.*s\n", line_end_index, input_string);
+			print_info("CLIENT > %.*s\n", line_end_index, input_string);
 			header_section = true;
 			input_string += line_end_index + skip_trailing_chars;
 			input_left -= line_end_index + skip_trailing_chars;
 		} 
 
-		printf("Recognized headers: \n");
-		printf("| Header%24s | Value\n", "");
+		print_info("Recognized headers: \n");
+		print_info("| Header%24s | Value\n", "");
 		for (s8 i = 0; i < standard_headers_count; ++i) {
 			const char * header_name = standard_header_names[i];
 			String header_value = get_header_string_value(request_data, header_name, strlen(header_name));
 
 			if (header_value.start != NULL) {
-				printf("| %30s | %.*s\n", header_name, header_value.length, header_value.start);
+				print_info("| %30s | %S\n", header_name, header_value);
 			}
 		}
 
@@ -478,20 +633,20 @@ void process_request(Context * context, RequestData * request_data)
 		const char content_length_name[] = "Content-Length";
 		String header_value = get_header_string_value(request_data, content_length_name, strlen(content_length_name));
 		if (string_is_null(header_value)) {
-			printf("Content-Length header is not present. Assumming no request body.\n");
+			print_info("Content-Length header is not present. Assumming no request body.\n");
 		}
 		else {
 			u8 digits_read = string_to_s64(header_value, &content_length);
 			if (digits_read < 0) {
-				printf("Content-Length value is too large. Resulting value: %ld\n", content_length);
+				print_warning("Content-Length value is too large. Resulting value: %ld\n", content_length);
 			}
 		}
 
-		printf("Considering argument a path.\n");
+		print_info("Considering argument a path.\n");
 		String path;
 		char * path_c_str = NULL;
 		if (string_equals_c_str(argument, "/")) {
-			printf("Client is requesting root resource.\n");
+			print_info("Client is requesting root resource.\n");
 			path_c_str = "index.html";
 			path = string_create_from_static(path_c_str);
 		}
@@ -503,7 +658,7 @@ void process_request(Context * context, RequestData * request_data)
 			string_to_c_string(&path, path_c_str);
 		}
 
-		printf("Requested resource: %s\n", path_c_str);
+		print_info("Requested resource: %s\n", path_c_str);
 
 		u16 status_code;
 		Buffer requested_resource;
@@ -532,34 +687,34 @@ void process_request(Context * context, RequestData * request_data)
 			print_error("An unknown error occurred while reading the requested resource.\n");
 		}
 
-		printf("Sending response message to client.\n");
+		print_info("Sending response message to client.\n");
 
 		const char response_status_data[] = "HTTP/1.1 %hu %.*s\n"
 			"Server: Still thinking on a name...\n"
 			"Connection: close\n";
 		String status_code_title = get_status_code_title(context, status_code);
-		s64 output_length = snprintf(output, sizeof(output) - sizeof(response_status_data), response_status_data, status_code, status_code_title.length, status_code_title.start);
+		s64 output_length = snprintf((char *) output, sizeof(output) - sizeof(response_status_data), response_status_data, status_code, status_code_title.length, status_code_title.start);
 
 		s64 resource_length = requested_resource.used;
 		if (status_code == 200 && resource_length > 0) {
 			const char content_length_template[] = "Content-Length: %ld\n";
-			output_length += snprintf(output + output_length, sizeof(output) - output_length - sizeof(content_length_template), content_length_template, resource_length);
+			output_length += snprintf((char *) output + output_length, sizeof(output) - output_length - sizeof(content_length_template), content_length_template, resource_length);
 
 			const char * resource_mime_type = determine_resource_mime_type(&path, &requested_resource);
 			const char content_type_template[] = "Content-Type: %s\n";
-			output_length += snprintf(output + output_length, sizeof(output) - output_length - strlen(resource_mime_type), content_type_template, resource_mime_type);
+			output_length += snprintf((char *) output + output_length, sizeof(output) - output_length - strlen(resource_mime_type), content_type_template, resource_mime_type);
 		}
 
-		printf(	"[INFO] Header section length is: %ld.\n"
-				"[INFO] Content length is: %ld.\n"
-				"[INFO] Total is: %ld.\n",
-				output_length, resource_length, output_length + resource_length);
+		print_info( "Header section length is: %ld.\n"
+					"Content length is: %ld.\n"
+					"Total is: %ld.\n",
+					output_length, resource_length, output_length + resource_length);
 
 		memcpy(output + output_length, "\n", 1);
 		output_length += 1;
 
-		print_lines(output, output_length, "SERVER > ");
-		print_lines(requested_resource.start, resource_length, "SERVER > ");
+		print_lines(output, output_length, "[INFO] SERVER > ");
+		print_lines(requested_resource.start, resource_length, "[INFO] SERVER > ");
 
 		write(client_socket_fd, output, output_length);
 		write(client_socket_fd, requested_resource.start, resource_length);
@@ -593,12 +748,12 @@ int main(void)
 	fill_status_code(&server_context, 500, "Internal Server Error");
 
 	u64 connection_number = 0;
+	s32	socket_file_descriptor = -1;
 
 	magic_obj = magic_open(MAGIC_MIME_TYPE);
 	magic_load(magic_obj, NULL);
 	//magic_compile(magic_obj, NULL);
 
-	socket_file_descriptor = -1;
 	if (signal(SIGINT, signal_handler) == SIG_ERR) {
 		print_error("An error occurred while setting a signal handler.\n");
 		return 1;
@@ -618,6 +773,12 @@ int main(void)
 		return -1;
 	}
 
+	s32 socket_reuse_address = true;
+	if (setsockopt(socket_file_descriptor, SOL_SOCKET, SO_REUSEADDR, &socket_reuse_address, sizeof(s32)) != 0) {
+		print_error("Couldn't set socket options.\n");
+		perror("setsockopt");
+	}
+
 	if (bind(socket_file_descriptor, (sockaddr *) &address_info, sizeof(address_info)) == -1) {
 		print_error("Couldn't bind socket.\n");
 		perror("bind");
@@ -632,14 +793,18 @@ int main(void)
 	sockaddr_in client_address_info;
 	socklen_t client_address_info_len = sizeof(client_address_info);
 	while (true) {
-		printf("Waiting for incoming connections.\n");
+		print_info("Waiting for incoming connections.\n");
 		s32 client_socket_file_descriptor = accept(socket_file_descriptor, (sockaddr *) &client_address_info, &client_address_info_len);
 		if (client_socket_file_descriptor == -1) {
+			if (errno == EINTR) {
+				print_info("accept call was interrupted.\n");
+				break;
+			}
 			print_error("Couldn't accept incoming connection.\n");
 			continue;
 		}
 
-		printf("Incoming connection #%lu accepted.\n", connection_number);
+		print_info("Incoming connection #%lu accepted.\n", connection_number);
 
 		u8 _request_data_buffer[1024] = { 0 };
 		String _request_headers[50] = { 0 };
@@ -658,8 +823,24 @@ int main(void)
 		buffer_clear(&request_data.buffer);
 		memset(request_data.header_values, 0, sizeof(request_data.header_values[0]) * request_data.header_values_capacity);
 		close(client_socket_file_descriptor);
-		printf("Connection #%lu closed.\n\n", connection_number);
+		print_info("Connection #%lu closed.\n\n", connection_number);
 		connection_number += 1;
+	}
+
+	if (socket_file_descriptor != -1) {
+		print_info("Closing socket.\n");
+		s32 result = shutdown(socket_file_descriptor, SHUT_RD);
+		if (result != 0) {
+			print_error("Failed to shutdown socket.\n");
+			perror("shutdown");
+		}
+		result = close(socket_file_descriptor);
+		if (result != 0) {
+			print_error("Failed to close socket.\n");
+			perror("close");
+		}
+
+		socket_file_descriptor = -1;
 	}
 
 	magic_close(magic_obj);

@@ -20,4 +20,5 @@ typedef struct sockaddr_in sockaddr_in;
 
 extern const s64 SIZE_U8;
 
+extern const s32 S32_MAX;
 extern const s64 S64_MAX;
